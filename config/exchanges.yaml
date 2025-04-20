@@ -1,26 +1,61 @@
+# ────────────────────────────────────────────────────────────────────
+# Exchange & stream configuration
+# ────────────────────────────────────────────────────────────────────
 exchanges:
   binance:
     symbols: [BTC/USDT, ETH/USDT]
-    streams: [ticker, aggTrade, depth] 
-    reconnect_delay: 5
+    streams: [ticker, aggTrade, depth]   # add / remove as you like
+    reconnect_delay: 5                  # base seconds for back‑off
 
-storage:
-  backend: redis
-  redis_url: redis://localhost:6379/0
-  max_memory_gb: 8
-  hot_window_hours: 24
+# If you later add another connector file (coinbase.py, kraken.py, …)
+# just drop it in the same structure:
+#  coinbase:
+#    symbols: [BTC-USD, ETH-USD]
+#    reconnect_delay: 5
 
+# ────────────────────────────────────────────────────────────────────
+# Alert configuration
+# ────────────────────────────────────────────────────────────────────
 alerts:
+  # -------- Price‑move thresholds ----------------------------------
   thresholds:
-    pct_24h: 0.05            # 5% change over 24 hours
-    window_24h_ms: 86400000  # 24 hours in milliseconds
-    pct_short: 0.02          # 2% change in short window
-    window_short_ms: 3600000 # 1 hour in milliseconds
+    pct_24h:        0.05        #  5 % vs 24 h ago
+    window_24h_ms:  86400000    # 24 h
+    pct_short:      0.01        #  1 % inside short window
+    window_short_ms: 300000     # 5 minutes
+    cooldown_ms:    600000      # 10 min between identical price alerts
+
+  # -------- Spread / liquidity alert ------------------------------
+  spread:
+    threshold_bps:  30          # widen > 30 bp
+    window_ms:      10000       # consider last 10 s of depth data
+    cooldown_ms:    600000      # 10 min
+
+  # -------- Buy‑vs‑sell flow alert ---------------------------------
+  flow:
+    threshold:      0.6         # 60 % imbalance (|buy-sell| / total)
+    bucket_ms:      60000       # 1 min trade buckets
+    window_buckets: 3           # last 3 buckets → 3 min window
+    min_notional:   100000      # ignore if < $100k traded
+    cooldown_ms:    600000      # 10 min
+
+  # -------- SMTP settings -----------------------------------------
   email:
-    smtp_host: smtp.example.com
-    smtp_port: 587
-    username: user@example.com
-    password: yourpassword
-    from_addr: alerts@example.com
-    to_addrs:
-      - user@example.com
+      smtp_host: smtp.gmail.com
+      smtp_port: 465
+      username: xxxxxx@gmail.com
+      password: xxxx xxxx xxxx xxxx
+      from_addr: xxxxxx@gmail.com
+      to_addrs:
+        - xxxxxx@gmail.com
+
+# ────────────────────────────────────────────────────────────────────
+# Storage backend
+#   "memory" – keep everything in‑process RAM (default)
+#   "redis"  – keep hot window in RAM, evict cold entries to Redis
+# ────────────────────────────────────────────────────────────────────
+storage:
+  backend: redis                       # "memory" or "redis"
+  redis_url: redis://localhost:6379/0
+  max_memory_gb: 8                     # spill after 8 GB RSS
+  hot_window_hours: 24                 # keep 24 h in RAM

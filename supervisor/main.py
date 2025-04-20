@@ -67,9 +67,10 @@ def create_connectors(cfg: dict, handler: TickHandler):
                 symbols=exch_cfg["symbols"],
                 message_handler=handler.handle_tick,
                 reconnect_delay=exch_cfg.get("reconnect_delay", 5),
-                streams=exch_cfg.get("streams"),
+                streams=exch_cfg.get("streams"),          # ← add this line
             )
         )
+
     return connectors
 
 
