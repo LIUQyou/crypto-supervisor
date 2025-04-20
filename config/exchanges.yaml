@@ -1,0 +1,26 @@
+exchanges:
+  binance:
+    symbols: [BTC/USDT, ETH/USDT]
+    streams: [ticker, aggTrade, depth] 
+    reconnect_delay: 5
+
+storage:
+  backend: redis
+  redis_url: redis://localhost:6379/0
+  max_memory_gb: 8
+  hot_window_hours: 24
+
+alerts:
+  thresholds:
+    pct_24h: 0.05            # 5% change over 24 hours
+    window_24h_ms: 86400000  # 24 hours in milliseconds
+    pct_short: 0.02          # 2% change in short window
+    window_short_ms: 3600000 # 1 hour in milliseconds
+  email:
+    smtp_host: smtp.example.com
+    smtp_port: 587
+    username: user@example.com
+    password: yourpassword
+    from_addr: alerts@example.com
+    to_addrs:
+      - user@example.com
