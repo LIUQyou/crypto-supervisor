@@ -1,8 +1,11 @@
 """
-TickHandler v3 – central dispatcher with
-* price‑move alerts
-* flow‑imbalance alerts
-* spread‑widening alerts
+TickHandler v3
+==============
+
+* ticker  → price‑move alerts
+* trade   → FlowAccumulator
+* depth   → SpreadMonitor
+* retry‑aware e‑mail dispatch
 """
 
 from __future__ import annotations
@@ -17,6 +20,7 @@ from supervisor.storage.redis_store import RedisStore
 
 from supervisor.processors.flow import FlowAccumulator
 from supervisor.processors.spread import SpreadMonitor
+from supervisor.processors.file_sink import FileSink
 
 logger = logging.getLogger(__name__)
 
@@ -25,21 +29,26 @@ class TickHandler:
     RETRY_DELAY_S = 5
     MAX_RETRIES = 2
 
+    # ------------------------------------------------------------------ #
+    # init                                                               #
+    # ------------------------------------------------------------------ #
     def __init__(self, config: Dict):
-        # ------- storage backend ------------------------------------- #
-        storage_conf = config.get("storage", {})
-        backend = storage_conf.get("backend", "memory").lower()
-
+        # -------- storage backend ------------------------------------- #
+        st_conf = config.get("storage", {})
+        backend = st_conf.get("backend", "memory").lower()
+        sink_cfg = st_conf.get("sink", {})
+        self.file_sink = FileSink(**sink_cfg)   # e.g. rotate_minutes=5
+        
         if backend == "redis":
             self.store = RedisStore(
-                redis_url=storage_conf.get("redis_url", "redis://localhost:6379/0"),
-                max_memory_bytes=int(storage_conf.get("max_memory_gb", 8)) * 1024**3,
-                hot_window_ms=int(storage_conf.get("hot_window_hours", 24)) * 3600 * 1000,
+                redis_url=st_conf.get("redis_url", "redis://localhost:6379/0"),
+                max_memory_bytes=int(st_conf.get("max_memory_gb", 8)) * 1024**3,
+                hot_window_ms=int(st_conf.get("hot_window_hours", 24)) * 3600 * 1000,
             )
         else:
             self.store = MemoryStore()
 
-        # ------- alert engine & helpers ------------------------------ #
+        # -------- alert engine & helpers ------------------------------ #
         self.alert_engine = AlertEngine(config.get("alerts", {}))
 
         flow_cfg = config["alerts"].get("flow", {})
@@ -50,40 +59,48 @@ class TickHandler:
 
         self._sem: Dict[Tuple[str, str], asyncio.Lock] = {}
 
-    # ---------------------------------------------------------------- #
+    # ------------------------------------------------------------------ #
+    # public async API                                                   #
+    # ------------------------------------------------------------------ #
     async def handle_tick(self, data: Dict):
         """
-        Accepts one of three normalised events:
+        Receives one normalised event dict from any connector.
 
-        ticker → {"event":"ticker","price":…}
-        trade  → {"event":"trade", ...}
-        depth  → {"event":"depth", ...}
+        * ticker  → {"event":"ticker", ...}
+        * trade   → {"event":"trade",  ...}
+        * depth   → {"event":"depth",  ...}
         """
         try:
+            # 1. persist to file sink
+            await self.file_sink.add(data)
+            
             event = data.get("event", "ticker")
-            exch = data["exchange"]
-            sym = data["symbol"]
-            ts = int(data.get("timestamp", 0))
 
-            # ----- route non‑ticker events first --------------------
+            # ----- trade: buy/sell imbalance ------------------------- #
             if event == "trade":
                 await self.flow_acc.add(data)
-                return                           # not fed to price alerts
-            elif event == "depth":
-                await self.spread_mon.add(data)
-                # continue into price section only if we have a usable price
+                return  # do NOT feed into price alerts
 
-            # ----- ticker (or depth w/ price) for price alerts -------
+            # ----- depth: spread monitor ----------------------------- #
+            if event == "depth":
+                await self.spread_mon.add(data)
+                return  # do NOT feed into price alerts
+
+            # ----- ticker: price‑move alerts ------------------------- #
+            exch: str = data["exchange"]
+            sym: str = data["symbol"]
+            ts: int = int(data.get("timestamp", 0))
+
             try:
                 price = float(data["price"])
             except (TypeError, ValueError):
-                return  # skip if price missing
+                return  # ignore malformed ticker
 
-            # persist latest price
+            # 1. persist latest price
             self.store.update(exch, sym, price, ts)
             logger.debug("Stored %s %s @ %s", exch, sym, price)
 
-            # price‑move alerts
+            # 2. check price thresholds
             alerts = self.alert_engine.check(exch, sym, price, ts)
             if alerts:
                 sem = self._sem.setdefault((exch, sym), asyncio.Lock())
@@ -94,8 +111,11 @@ class TickHandler:
         except Exception as exc:  # noqa: BLE001
             logger.exception("Error in handle_tick(): %s", exc)
 
-    # ---------------------------------------------------------------- #
+    # ------------------------------------------------------------------ #
+    # helpers                                                            #
+    # ------------------------------------------------------------------ #
     async def _dispatch_with_retry(self, alert: Dict[str, str]):
+        """Send an alert email, retrying on failure."""
         for attempt in range(1 + self.MAX_RETRIES):
             if await self.alert_engine.send(alert):
                 return

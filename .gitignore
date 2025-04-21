@@ -1,0 +1,15 @@
+# ─────────────────────────────────────────────────────────────
+#  Crypto‑Supervisor – project‑specific ignore rules
+# ─────────────────────────────────────────────────────────────
+
+# 1) raw‑tick archives produced by FileSink
+/ticks/**
+
+# 2) local notebooks, scratch data, auto‑checkpoints
+/jupyter/**
+**/.ipynb_checkpoints/
+
+# (optional) editor / OS cruft
+*.swp
+.DS_Store
+Thumbs.db

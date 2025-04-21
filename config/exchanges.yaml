@@ -43,19 +43,38 @@ alerts:
   email:
       smtp_host: smtp.gmail.com
       smtp_port: 465
-      username: xxxxxx@gmail.com
-      password: xxxx xxxx xxxx xxxx
-      from_addr: xxxxxx@gmail.com
+      username: xxx@gmail.com
+      password: xxxx
+      from_addr: xxx@gmail.com
       to_addrs:
-        - xxxxxx@gmail.com
+        - xxx@gmail.com
+        # - xxx@gmail.com
 
 # ────────────────────────────────────────────────────────────────────
 # Storage backend
 #   "memory" – keep everything in‑process RAM (default)
 #   "redis"  – keep hot window in RAM, evict cold entries to Redis
 # ────────────────────────────────────────────────────────────────────
+# ───────────────────────────────────────────────────────────
+# Storage configuration
+#   backend:
+#     "memory" – keep everything in‑process RAM
+#     "redis"  – keep hot window in RAM; spill cold keys to Redis
+#   sink:
+#     Optional on‑disk file writer (CSV/Parquet) for offline analysis
+# ───────────────────────────────────────────────────────────
 storage:
-  backend: redis                       # "memory" or "redis"
-  redis_url: redis://localhost:6379/0
-  max_memory_gb: 8                     # spill after 8 GB RSS
-  hot_window_hours: 24                 # keep 24 h in RAM
+  # —— live key‑value store used by the alerting pipeline ——
+  backend: redis                         # choose "memory" or "redis"
+  redis_url: redis://localhost:6379/0    # Redis connection string
+  max_memory_gb: 8                       # soft RSS limit before spill
+  hot_window_hours: 24                   # keep last 24 h in RAM
+
+  # —— optional FileSink for raw‑tick archiving ——
+  sink:
+    base_dir: "ticks"                    # root folder for output files
+    fmt: "parquet"                       # or "csv"
+    rotate_minutes: 10                   # roll a new file every 5 min
+    max_rows: 0                          # flush earlier if buffer >20 k rows
+    compression: "zstd"                  # Parquet compression codec
+

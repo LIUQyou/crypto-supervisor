@@ -21,6 +21,7 @@ from typing import List, Type
 
 from supervisor.config import load_config
 from supervisor.processors.handler import TickHandler
+from supervisor.processors.file_sink import FileSink
 
 logger = logging.getLogger("supervisor.main")
 
@@ -74,20 +75,32 @@ def create_connectors(cfg: dict, handler: TickHandler):
     return connectors
 
 
+async def _periodic_flush(sink: FileSink):
+    while True:
+        await asyncio.sleep(60)
+        await sink.periodic_flush()
+        
 # --------------------------------------------------------------------------- #
 # service runner                                                              #
 # --------------------------------------------------------------------------- #
 async def run_service(args):
-    cfg = load_config(args.config)
-    handler = TickHandler(cfg)
+    cfg      = load_config(args.config)
+    handler  = TickHandler(cfg)
+
+    # ─── schedule periodic flush at start ───
+    flush_task = asyncio.create_task(
+        _periodic_flush(handler.file_sink),
+        name="file_sink.flush",
+    )
 
     connectors = create_connectors(cfg, handler)
     if not connectors:
         logger.error("No valid connectors available – aborting.")
+        flush_task.cancel()
         return
 
-    loop = asyncio.get_running_loop()
-    stop_event = asyncio.Event()
+    loop        = asyncio.get_running_loop()
+    stop_event  = asyncio.Event()
 
     def _shutdown():
         logger.info("Shutdown signal received – stopping connectors …")
@@ -109,10 +122,16 @@ async def run_service(args):
     # wait until shutdown requested
     await stop_event.wait()
 
-    # cancel outstanding tasks
+    # cancel connector + flush tasks
     for t in tasks:
         t.cancel()
-    await asyncio.gather(*tasks, return_exceptions=True)
+    flush_task.cancel()
+    await asyncio.gather(*tasks, flush_task, return_exceptions=True)
+
+    # final hard‑flush for whatever remains in RAM
+    for key in list(handler.file_sink.buffers):
+        await handler.file_sink._flush(key)
+
     logger.info("Crypto Supervisor stopped.")
 
 
