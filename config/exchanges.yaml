@@ -40,7 +40,7 @@ alerts:
   email:
       smtp_host: smtp.gmail.com
       smtp_port: 465
-      username: xxx@gmail.com
+      username: xx@gmail.com
       password: xx
       from_addr: xx@gmail.com
       to_addrs:
