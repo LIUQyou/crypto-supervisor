@@ -28,13 +28,30 @@ Alerts are sent by e‑mail (Gmail‑friendly) with automatic retries and cool�
 
 | Area | Details |
 |------|---------|
-| **Real‑time ingestion** | Binance connector streams **ticker (1 s)**, **aggTrade**, and **depth (100 ms)** simultaneously. Reconnects with exponential back‑off + jitter. |
-| **Four alert types** | 24 h Δ%, 5 min Δ%, buy/sell imbalance (3 min buckets), spread > X bp for Y s. Each has its own cool‑down. |
-| **Hybrid storage** | Latest tick & 24 h deque in RAM; spill to Redis once RSS > *N* GB (configurable). |
-| **Async e‑mail** | STARTTLS _or_ implicit TLS, success/failure aware, 2‑retry back‑off. Gmail App‑password ready. |
+| **Real‑time ingestion** | Binance connector streams **ticker (1 s)**, **aggTrade** (per execution), and **depth (100 ms deltas)** simultaneously. Reconnects with exponential back‑off + jitter. |
+| **Four alert types** | 24 h Δ %, 5 min Δ %, buy/sell imbalance (3 min buckets), spread > *X* bp for *Y* s. Each has its own cool‑down. |
+| **Hybrid storage** | Latest ticks & rolling 24 h deque in RAM; spill to Redis once RSS > *N* GB (configurable). |
+| **Historical file dump** | Optional FileSink writes raw ticks to **Parquet/CSV** under `ticks/` for ad‑hoc back‑testing. |
+| **Async e‑mail** | STARTTLS *or* implicit TLS, success/failure aware, 2‑retry back‑off. Gmail App‑password ready. |
 | **Plug‑in connectors & processors** | Add new exchange or analytics module with one file; everything else auto‑registers. |
 | **Graceful shutdown** | SIGINT/SIGTERM closes sockets, drains tasks, exits cleanly. |
 | **Python 3.10+** | Modern union‑types (`price: float | None`) and faster asyncio. |
+
+---
+
+## Data Streams <a id="data-streams"></a>
+
+| Stream      | Frequency                            | Stored as                             | Key columns (→ examples)                                       | Intended use                                           |
+|-------------|--------------------------------------|---------------------------------------|----------------------------------------------------------------|--------------------------------------------------------|
+| **ticker**  | 1 s                                  | `ticks/<symbol>/ticker/.../*.parquet` | `price`, `best_bid`, `best_ask`, `volume` (24 h), `quote_volume` (24 h) | Long‑term Δ %, spread baseline, dashboards           |
+| **aggTrade** (labeled *trade* in files) | on every execution (few ms) | `ticks/<symbol>/trade/.../*.parquet`  | `price`, `qty`, `side` (buy/sell), `timestamp`              | Flow‑imbalance, VWAP, micro‑structure research         |
+| **depth**   | every 100 ms (deltas rebuilt to snapshot) | `ticks/<symbol>/depth/.../*.parquet`  | `best_bid [price,qty]`, `best_ask […]`, `bids` & `asks` arrays (up to N levels), `price` (mid) | Liquidity stress, queue imbalance, impact modelling |
+
+* Ingestion uses **`<symbol>@depth@100ms`** which only transmits changed
+  levels; the connector merges deltas **on‑the‑fly** with a REST
+  snapshot so that files already contain **true snapshots** (default
+  *N = 20* levels).
+* All timestamps are Unix ms (UTC).
 
 ---
 

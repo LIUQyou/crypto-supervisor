@@ -17,38 +17,35 @@ exchanges:
 # Alert configuration
 # ────────────────────────────────────────────────────────────────────
 alerts:
-  # -------- Price‑move thresholds ----------------------------------
-  thresholds:
-    pct_24h:        0.05        #  5 % vs 24 h ago
-    window_24h_ms:  86400000    # 24 h
-    pct_short:      0.01        #  1 % inside short window
-    window_short_ms: 300000     # 5 minutes
-    cooldown_ms:    600000      # 10 min between identical price alerts
-
   # -------- Spread / liquidity alert ------------------------------
   spread:
-    threshold_bps:  30          # widen > 30 bp
-    window_ms:      10000       # consider last 10 s of depth data
-    cooldown_ms:    600000      # 10 min
+    threshold_bps: 30        # widen > 30 bp
+    window_ms:     10000     # look at last 10 s of depth data
+    cooldown_ms:   600000    # 10 min
 
-  # -------- Buy‑vs‑sell flow alert ---------------------------------
+  # -------- Buy‑vs‑sell flow alert --------------------------------
   flow:
-    threshold:      0.6         # 60 % imbalance (|buy-sell| / total)
-    bucket_ms:      60000       # 1 min trade buckets
-    window_buckets: 3           # last 3 buckets → 3 min window
-    min_notional:   100000      # ignore if < $100k traded
-    cooldown_ms:    600000      # 10 min
+    threshold:     0.60      # 60 % signed‑notional imbalance
+    window_ms:     180000    # 3‑minute rolling window (was 3 buckets×1 min)
+    min_notional:  100000    # ignore if < $100k traded in window
+    cooldown_ms:   600000    # 10 min
+
+  # -------- Order‑book queue‑imbalance alert ----------------------
+  queue:
+    threshold: 0.7           # |imbalance| ≥ 70 %
+    window_ms: 3000          # over 3 seconds
+    cooldown_ms: 600000      # 10‑minute silence
 
   # -------- SMTP settings -----------------------------------------
   email:
       smtp_host: smtp.gmail.com
       smtp_port: 465
       username: xxx@gmail.com
-      password: xxxx
-      from_addr: xxx@gmail.com
+      password: xx
+      from_addr: xx@gmail.com
       to_addrs:
-        - xxx@gmail.com
-        # - xxx@gmail.com
+        - xx@gmail.com
+        - xx@gmail.com
 
 # ────────────────────────────────────────────────────────────────────
 # Storage backend
@@ -74,7 +71,7 @@ storage:
   sink:
     base_dir: "ticks"                    # root folder for output files
     fmt: "parquet"                       # or "csv"
-    rotate_minutes: 10                   # roll a new file every 5 min
+    rotate_minutes: 60                   # roll a new file every 5 min
     max_rows: 0                          # flush earlier if buffer >20 k rows
     compression: "zstd"                  # Parquet compression codec
 
